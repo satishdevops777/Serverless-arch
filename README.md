@@ -211,3 +211,96 @@ Here’s what each section means in the Lambda console:
 **🔄 Step Functions State Machines**
 - Integration with AWS Step Functions
 - Used for workflows involving multiple Lambdas
+
+# Projects
+---
+
+## 🏦 PROJECT 1: Real-Time Transaction Monitoring (Fraud Alert System)
+
+### 🎯 What this project does
+- A bank monitors transactions in real time and flags suspicious ones (e.g., high-value transfers).
+- 👉 Example: Transaction > ₹10 lakh → trigger alert
+
+### 🧠 How it works (real flow)
+```
+Transaction → Stream → Lambda → Check rules → Alert / Store
+```
+**🧰 Services used**
+- Amazon Kinesis, AWS Lambda, Amazon SNS, Amazon CloudWatch
+
+### ❓ Why these services
+- Kinesis → real-time streaming
+  👉 “Streaming” = continuous flow of small data events
+  In banking, each transaction = one event
+  ```JSON
+  { "id": "txn1", "amount": 5000 }
+  { "id": "txn2", "amount": 2000000 }
+  { "id": "txn3", "amount": 100 }
+  ```
+  🔄 Real Production Flow
+  ```
+  Payment system → Kinesis → Lambda → Fraud check
+  ```
+  👉 In real bank:
+  ```
+  ATM
+  UPI
+  Card swipe
+  All push events into Kinesis
+  ```
+- Lambda → instant processing
+- SNS → alerting
+- CloudWatch → monitoring
+
+### ⚙️ Auto or Manual?
+- 👉 Fully automatic: As soon as data comes → Lambda runs
+
+**🔐 IAM Role**
+- Attach to Lambda: Kinesis read, SNS publish, CloudWatch logs
+
+### 🛠️ AWS Console Setup
+```
+Step 1: Create Kinesis Stream
+- Name: txn-stream
+Step 2: Create SNS Topic
+- Name: fraud-alerts
+- Add email subscription
+Step 3: Create Lambda
+- Runtime: Python
+- Name: fraud-checker
+Step 4: Add Trigger
+- Select Kinesis → txn-stream
+```
+- Lambda Code
+```py
+import json
+import base64
+import boto3
+
+sns = boto3.client('sns')
+TOPIC_ARN = "YOUR_SNS_ARN"
+
+def lambda_handler(event, context):
+    for record in event['Records']:
+        payload = base64.b64decode(record['kinesis']['data'])
+        data = json.loads(payload)
+
+        if data['amount'] > 1000000:
+            sns.publish(
+                TopicArn=TOPIC_ARN,
+                Message=f"Fraud Alert: {data}"
+            )
+```
+
+### 🧪 Testing
+- Send test data:
+```
+{
+  "id": "txn101",
+  "amount": 1500000
+}
+```
+Verify:
+- Email alert received
+- Logs in CloudWatch
+  
