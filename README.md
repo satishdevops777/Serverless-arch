@@ -75,3 +75,139 @@
 - Automatic scaling
 - Pay-per-use pricing
 - Event-driven execution
+---
+
+# AWS Labmda
+- AWS Lambda = Run code without managing servers
+👉 You upload your code → define triggers → Lambda executes it automatically.
+
+## 🚀 1. What is the use of AWS Lambda?
+**🔹 Common uses:**
+- Backend APIs (with Amazon API Gateway)
+- File processing (e.g., image resize on upload to Amazon S3)
+- Real-time stream processing
+- Automation scripts (cron jobs via Amazon EventBridge)
+- Microservices
+
+## ❓ 2. Why do we use Lambda?
+**🟢 Key reasons:**
+- No server management → no EC2, patching, scaling
+- Auto scaling → handles 1 to millions of requests
+- Pay per execution → cost-efficient
+- Event-driven → integrates with many AWS services
+- Faster development → focus only on code
+
+👉 Instead of managing infrastructure, you focus purely on business logic.
+
+## 🔐 3. Security context in Lambda
+- Security in Lambda revolves around IAM + execution environment
+
+**🔑 Key components:**
+**1. Execution Role (VERY IMPORTANT)**
+- Lambda runs using an IAM Role
+- This role defines what the function can access
+- Example:
+```
+Read from S3
+Write to DynamoDB
+Send logs to CloudWatch
+```
+👉 Principle: Least privilege access
+
+**2. Resource-based Policies**
+- Control who can invoke Lambda
+- Example:
+  - API Gateway invoking Lambda
+  - S3 triggering Lambda
+
+**3. Environment Variables Security**
+- Store secrets (but use:
+- AWS Secrets Manager or
+- AWS Systems Manager Parameter Store)
+
+**4. VPC Configuration**
+- If Lambda accesses private resources (RDS, internal APIs)
+- Attach Lambda to a VPC
+
+**5. Encryption**
+- At rest (AWS-managed keys / KMS)
+- In transit (HTTPS)
+
+
+## 💰 4. How Lambda optimizes cost?
+**💡 Pricing factors:**
+- Number of requests
+- Execution duration
+- Memory allocated
+**🟢 Cost optimization techniques:**
+- Choose right memory (affects CPU too)
+- Reduce execution time
+- Use provisioned concurrency only when needed
+- Avoid idle resources (unlike EC2)
+- Use event-driven triggers instead of polling
+
+**👉 Example:**
+- EC2 runs 24/7 ❌
+- Lambda runs only when needed ✅
+
+## 🖥️ 5. AWS Console Options (Lambda)
+
+Here’s what each section means in the Lambda console:
+
+**📊 Dashboard**
+- Overview of all Lambda functions
+- Metrics: Invocations, Errors, Duration
+- Quick monitoring
+  
+**📦 Applications**
+- Pre-built serverless apps (via AWS SAM / Serverless repo)
+- Helps deploy ready solutions quickly
+
+**⚙️ Functions (Core area)**
+- Where you create/manage functions
+- Inside a function:
+  - Code → upload or write code
+  - Test → simulate events
+  - Monitor → logs (CloudWatch)
+  - Configuration:
+    - Memory
+    - Timeout
+    - Environment variables
+    - Triggers
+    - Permissions (IAM role)
+      
+**📚 Additional Resources**
+- Documentation links
+- Learning resources
+
+**⚡ Capacity Providers (New)**
+- Used mainly with container workloads (less relevant for basic Lambda)
+- Helps manage compute capacity
+
+**🔏 Code Signing Configurations**
+- Ensures only trusted code is deployed
+- Important for security compliance
+
+**🔗 Event Source Mappings**
+- Connect Lambda to:
+  - SQS, Kinesis, DynamoDB streams
+  - Controls batch size, retries
+
+**🧱 Layers**
+- Reusable code packages (libraries, SDKs)
+- Example:
+  - Common utilities
+  - ML libraries
+
+**🌍 Replicas**
+- For Lambda@Edge / global replication scenarios
+
+**🔗 Related AWS Resources**
+- Quick links to:
+  - CloudWatch logs
+  - IAM roles
+  - Triggers
+  
+**🔄 Step Functions State Machines**
+- Integration with AWS Step Functions
+- Used for workflows involving multiple Lambdas
