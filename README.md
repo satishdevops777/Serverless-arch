@@ -259,48 +259,20 @@ Transaction → Stream → Lambda → Check rules → Alert / Store
 - Attach to Lambda: Kinesis read, SNS publish, CloudWatch logs
 
 ### 🛠️ AWS Console Setup
+Flow:
 ```
-Step 1: Create Kinesis Stream
-- Name: txn-stream
-Step 2: Create SNS Topic
-- Name: fraud-alerts
-- Add email subscription
-Step 3: Create Lambda
-- Runtime: Python
-- Name: fraud-checker
-Step 4: Add Trigger
-- Select Kinesis → txn-stream
-```
-- Lambda Code
-```py
-import json
-import base64
-import boto3
-
-sns = boto3.client('sns')
-TOPIC_ARN = "YOUR_SNS_ARN"
-
-def lambda_handler(event, context):
-    for record in event['Records']:
-        payload = base64.b64decode(record['kinesis']['data'])
-        data = json.loads(payload)
-
-        if data['amount'] > 1000000:
-            sns.publish(
-                TopicArn=TOPIC_ARN,
-                Message=f"Fraud Alert: {data}"
-            )
+Transaction → Kinesis → Lambda → (if suspicious) → SNS Email Alert
 ```
 
-### 🧪 Testing
-- Send test data:
+### ✅ STEP 1: Create Kinesis Stream
+- Go to Kinesis → Data streams → Create data stream
+- Fill:
 ```
-{
-  "id": "txn101",
-  "amount": 1500000
-}
+Name: txn-stream
+Capacity mode: On-demand ✅
+Max record size: 1024 (default)
 ```
-Verify:
-- Email alert received
-- Logs in CloudWatch
-  
+- Expand Server-side encryption → Enable (AWS managed key) ✅
+- Click Create
+
+⏳ Wait until Status = Active
