@@ -345,6 +345,11 @@ AWSLambdaBasicExecutionRole (for logs)
       "Action": "dynamodb:PutItem",
       "Effect": "Allow",
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:us-east-1:YOUR_ACCOUNT_ID:fraud-dlq"
     }
   ]
 }
