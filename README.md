@@ -469,7 +469,19 @@ def send_to_dlq(data):
     except Exception as e:
         print("DLQ send failed:", str(e))
 ```
+```
+aws kinesis put-record   --stream-name txn-stream   --partition-key key1   --data '{"id":"txn202","amount":500}'   --region us-east-1
 
+
+aws kinesis put-record   --stream-name txn-stream   --partition-key key1   --data '{"amount":"inval"}'   --region us-east-1
+
+
+aws kinesis put-record \
+  --stream-name txn-stream \
+  --partition-key key1 \
+  --data '{"id":"txn300","amount":2000000}' \
+  --region us-east-1
+```
 
 👉 Click Deploy
 
