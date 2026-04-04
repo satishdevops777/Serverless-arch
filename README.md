@@ -584,3 +584,395 @@ Data enters Kinesis
 | Failure handling | SQS DLQ    |
 
 - In this architecture, each AWS service plays a specific role to build a reliable, scalable, and event-driven system. Amazon Kinesis is used as the entry point to ingest continuous real-time transaction data. AWS Lambda processes each transaction automatically without managing servers and applies fraud detection logic. The results are stored in Amazon DynamoDB, which provides fast and scalable storage for auditing and future analysis. If any suspicious activity is detected, Amazon SNS sends instant alerts such as emails or notifications. Amazon CloudWatch is used to monitor logs, metrics, and system health, helping in debugging and observability. Finally, Amazon SQS (used as a Dead Letter Queue) ensures that failed events are not lost and can be retried later, making the system fault-tolerant. Together, these services form a fully automated, scalable, and production-ready solution for real-time transaction processing.
+
+## 🚀 Project: Automated EBS Volume Cleanup System
+🎯 Goal
+- Automatically detect and handle unused / unattached EBS volumes to reduce AWS costs.
+
+### 🧠 What You'll Build
+- A serverless system using:
+- AWS Lambda → runs cleanup logic
+- Amazon EC2 → source of EBS volumes
+- Amazon CloudWatch → scheduling via Events
+- Amazon SNS → alerts before deletion
+- AWS IAM → permissions
+
+### 🏗️ Architecture Flow
+```
+CloudWatch Event (Scheduled)
+        ↓
+    Lambda Function
+        ↓
+Describe EBS Volumes
+        ↓
+Filter:
+  - Available (not attached)
+  - Older than X days
+        ↓
+SNS Notification (optional approval)
+        ↓
+Delete Volume OR Tag it
+```
+### 🚀 1. Production-Ready Lambda Script
+### This version includes:
+- Pagination (handles large accounts)
+- Environment variables (no hardcoding)
+- Tag-based protection
+- Structured logging
+- Dry-run support
+- Region-safe (can extend later)
+
+```py
+import boto3
+import os
+import logging
+from datetime import datetime, timezone
+
+# Logging setup
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+ec2 = boto3.client('ec2')
+
+# Environment variables
+DAYS_THRESHOLD = int(os.getenv('DAYS_THRESHOLD', '7'))
+DRY_RUN = os.getenv('DRY_RUN', 'true').lower() == 'true'
+PROTECT_TAG_KEY = os.getenv('PROTECT_TAG_KEY', 'DoNotDelete')
+PROTECT_TAG_VALUE = os.getenv('PROTECT_TAG_VALUE', 'true')
+
+
+def is_protected(tags):
+    if not tags:
+        return False
+    return any(
+        tag['Key'] == PROTECT_TAG_KEY and tag['Value'].lower() == PROTECT_TAG_VALUE
+        for tag in tags
+    )
+
+
+def lambda_handler(event, context):
+    logger.info("Starting EBS cleanup process")
+
+    paginator = ec2.get_paginator('describe_volumes')
+    page_iterator = paginator.paginate(
+        Filters=[{'Name': 'status', 'Values': ['available']}]
+    )
+
+    now = datetime.now(timezone.utc)
+    deleted_count = 0
+    skipped_count = 0
+
+    for page in page_iterator:
+        for vol in page['Volumes']:
+            volume_id = vol['VolumeId']
+            create_time = vol['CreateTime']
+            tags = vol.get('Tags', [])
+
+            # Skip protected volumes
+            if is_protected(tags):
+                logger.info(f"Skipping protected volume: {volume_id}")
+                skipped_count += 1
+                continue
+
+            age_days = (now - create_time).days
+
+            if age_days >= DAYS_THRESHOLD:
+                log_data = {
+                    "volume_id": volume_id,
+                    "age_days": age_days,
+                    "action": "DELETE" if not DRY_RUN else "DRY_RUN"
+                }
+
+                logger.info(log_data)
+
+                if not DRY_RUN:
+                    try:
+                        ec2.delete_volume(VolumeId=volume_id)
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to delete {volume_id}: {str(e)}")
+
+    logger.info({
+        "summary": {
+            "deleted": deleted_count,
+            "skipped": skipped_count,
+            "dry_run": DRY_RUN
+        }
+    })
+
+    return {
+        "status": "completed",
+        "deleted": deleted_count,
+        "skipped": skipped_count
+    }
+```
+
+### ⚙️ 2. Lambda Configuration (IMPORTANT)
+- In AWS Lambda:
+
+| Key               | Value                    |
+| ----------------- | ------------------------ |
+| DAYS_THRESHOLD    | 7                        |
+| DRY_RUN           | false (true for testing) |
+| PROTECT_TAG_KEY   | DoNotDelete              |
+| PROTECT_TAG_VALUE | true                     |
+
+
+### 🔐 3. IAM Role (Production Safe)
+- Attach to Lambda:
+```
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EBSAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVolumes",
+        "ec2:DeleteVolume"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### ⏰ 4. Trigger via EventBridge (Step-by-Step)
+- We’ll use Amazon EventBridge
+```
+✅ Step 1: Go to EventBridge
+AWS Console → EventBridge
+Click Rules → Create Rule
+✅ Step 2: Define Rule
+Name: ebs-cleanup-daily
+Rule type: Schedule
+✅ Step 3: Set Schedule
+
+Choose Cron expression:
+
+👉 For 12:00 AM IST
+cron(30 18 * * ? *)
+
+✔ Explanation:
+
+18:30 UTC = 12:00 AM IST
+✅ Step 4: Select Target
+Target type → AWS service
+Select: Lambda function
+Choose your function
+✅ Step 5: Permissions
+
+EventBridge will auto-create permission like:
+
+lambda:InvokeFunction
+✅ Step 6: Create Rule
+
+Done 🎉 — your automation is now live.
+```
+
+### 🧪 5. Testing Strategy (DON'T SKIP)
+```
+Step 1: Enable Dry Run
+DRY_RUN = true
+Step 2: Manually Trigger Lambda
+Go to Lambda → Test → Run
+Step 3: Check Logs in Amazon CloudWatch
+
+Verify:
+
+Volumes identified correctly
+No accidental deletes
+Step 4: Switch to Production
+DRY_RUN = false
+```
+
+### 🛡️ Production Safety Checklist
+```
+✔ Only deletes available volumes
+✔ Tag protection enabled
+✔ Dry-run tested
+✔ Logs enabled
+✔ No hardcoded values
+✔ Pagination handled
+```
+
+## EC2 STRAT AND STOP
+
+```py
+import boto3
+import os
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+ec2 = boto3.client('ec2')
+
+ACTION = os.getenv("ACTION", "stop")  # start / stop
+
+def lambda_handler(event, context):
+    logger.info(f"EC2 Scheduler Action: {ACTION}")
+
+    filters = [
+        {'Name': 'tag:AutoStop', 'Values': ['true']} if ACTION == "stop"
+        else {'Name': 'tag:AutoStart', 'Values': ['true']}
+    ]
+
+    instances = ec2.describe_instances(Filters=filters)
+
+    instance_ids = []
+
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+            instance_ids.append(instance['InstanceId'])
+
+    if not instance_ids:
+        logger.info("No instances found")
+        return
+
+    logger.info(f"Target instances: {instance_ids}")
+
+    if ACTION == "stop":
+        ec2.stop_instances(InstanceIds=instance_ids)
+    elif ACTION == "start":
+        ec2.start_instances(InstanceIds=instance_ids)
+
+    return {"status": "done", "instances": instance_ids}
+```
+
+```
+{
+  "Effect": "Allow",
+  "Action": [
+    "ec2:DescribeInstances",
+    "ec2:StartInstances",
+    "ec2:StopInstances"
+  ],
+  "Resource": "*"
+}
+```
+
+EventBridge Rules
+    ↓
+Lambda Functions
+    ├── EBS Cleanup
+    ├── EC2 Scheduler
+    └── EKS Cleanup
+
+
+## KMS Deletion
+
+```
+import boto3
+import os
+import logging
+from datetime import datetime, timezone
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+kms = boto3.client('kms')
+
+DAYS_THRESHOLD = int(os.getenv("DAYS_THRESHOLD", "7"))
+DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
+DELETION_WINDOW = int(os.getenv("DELETION_WINDOW", "7"))  # min 7 days
+
+
+def lambda_handler(event, context):
+    logger.info("Starting KMS cleanup process")
+
+    paginator = kms.get_paginator('list_keys')
+    now = datetime.now(timezone.utc)
+
+    scheduled = 0
+    skipped = 0
+
+    for page in paginator.paginate():
+        for key in page['Keys']:
+            key_id = key['KeyId']
+
+            try:
+                metadata = kms.describe_key(KeyId=key_id)['KeyMetadata']
+            except Exception as e:
+                logger.error(f"Error describing key {key_id}: {str(e)}")
+                continue
+
+            # Skip AWS managed keys
+            if metadata['KeyManager'] != 'CUSTOMER':
+                skipped += 1
+                continue
+
+            # Skip already scheduled
+            if metadata['KeyState'] == 'PendingDeletion':
+                skipped += 1
+                continue
+
+            # Get creation date
+            created_at = metadata['CreationDate']
+            age_days = (now - created_at).days
+
+            # Get tags
+            tags = kms.list_resource_tags(KeyId=key_id).get('Tags', [])
+
+            tag_dict = {t['TagKey']: t['TagValue'] for t in tags}
+
+            if tag_dict.get("AutoDelete") != "true":
+                skipped += 1
+                continue
+
+            if age_days < DAYS_THRESHOLD:
+                skipped += 1
+                continue
+
+            logger.info({
+                "key_id": key_id,
+                "age_days": age_days,
+                "action": "SCHEDULE_DELETE" if not DRY_RUN else "DRY_RUN"
+            })
+
+            if not DRY_RUN:
+                try:
+                    kms.schedule_key_deletion(
+                        KeyId=key_id,
+                        PendingWindowInDays=DELETION_WINDOW
+                    )
+                    scheduled += 1
+                except Exception as e:
+                    logger.error(f"Failed to schedule deletion {key_id}: {str(e)}")
+
+    logger.info({
+        "summary": {
+            "scheduled": scheduled,
+            "skipped": skipped,
+            "dry_run": DRY_RUN
+        }
+    })
+
+    return {
+        "scheduled": scheduled,
+        "skipped": skipped
+    }
+```
+
+```
+{
+  "Effect": "Allow",
+  "Action": [
+    "kms:ListKeys",
+    "kms:DescribeKey",
+    "kms:ListResourceTags",
+    "kms:ScheduleKeyDeletion"
+  ],
+  "Resource": "*"
+}
+```
