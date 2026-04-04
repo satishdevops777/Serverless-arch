@@ -509,3 +509,14 @@ Kinesis → on-demand
 It runs automatically when:
 Data enters Kinesis
 ```
+
+| Responsibility   | Service    |
+| ---------------- | ---------- |
+| Ingestion        | Kinesis    |
+| Processing       | Lambda     |
+| Storage          | DynamoDB   |
+| Notification     | SNS        |
+| Monitoring       | CloudWatch |
+| Failure handling | SQS DLQ    |
+
+- In this architecture, each AWS service plays a specific role to build a reliable, scalable, and event-driven system. Amazon Kinesis is used as the entry point to ingest continuous real-time transaction data. AWS Lambda processes each transaction automatically without managing servers and applies fraud detection logic. The results are stored in Amazon DynamoDB, which provides fast and scalable storage for auditing and future analysis. If any suspicious activity is detected, Amazon SNS sends instant alerts such as emails or notifications. Amazon CloudWatch is used to monitor logs, metrics, and system health, helping in debugging and observability. Finally, Amazon SQS (used as a Dead Letter Queue) ensures that failed events are not lost and can be retried later, making the system fault-tolerant. Together, these services form a fully automated, scalable, and production-ready solution for real-time transaction processing.
