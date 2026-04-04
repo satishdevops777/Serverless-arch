@@ -224,9 +224,15 @@ Here’s what each section means in the Lambda console:
 ### 🧠 How it works (real flow)
 ```
 Transaction → Stream → Lambda → Check rules → Alert / Store
+
+Kinesis → Lambda → 
+   → DynamoDB (store result)
+   → SNS (alert)
+   → DLQ (failures)
+   → CloudWatch (monitoring)
 ```
 **🧰 Services used**
-- Amazon Kinesis, AWS Lambda, Amazon SNS, Amazon CloudWatch
+- Amazon Kinesis, AWS Lambda, Amazon DynamoDB, Amazon SNS, Amazon SQS, Amazon CloudWatch
 
 ### ❓ Why these services
 - Kinesis → real-time streaming
@@ -276,3 +282,230 @@ Max record size: 1024 (default)
 - Click Create
 
 ⏳ Wait until Status = Active
+
+
+### ✅ STEP 2: Create SNS Topic (for alerts)
+- Go to SNS → Topics → Create topic
+- Choose:
+```
+Type: Standard
+Name: fraud-alerts
+```
+- Enable encryption → AWS managed key 
+- Create topic
+```
+Add email subscription:
+Open topic → Create subscription
+Protocol: Email
+Endpoint: your email
+Confirm from your inbox
+```
+
+
+### ✅ STEP 3: Create DynamoDB Table
+- Go to DynamoDB → Create table
+- Table name: transactions
+- Partition key: transactionId
+- Create
+
+### ✅ STEP 4: Create SQS DLQ (Failure Handling)
+- Go to SQS → Create queue
+- Type: Standard
+- Name: fraud-dlq
+
+### ✅ STEP 5: Create IAM Role for Lambda
+- Go to IAM → Roles → Create role
+- Trusted entity: AWS service → Lambda
+- Attach policies:
+```
+AWSLambdaBasicExecutionRole (for logs)
+```
+- Click Next → Create
+- Add inline permissions (important):
+- Open role → Add permissions → Create inline policy → JSON:
+```
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "kinesis:GetRecords",
+        "kinesis:GetShardIterator",
+        "kinesis:DescribeStream"
+      ],
+      "Effect": "Allow",
+      "Resource": "*"
+    },
+    {
+      "Action": "sns:Publish",
+      "Effect": "Allow",
+      "Resource": "*"
+    },
+    {
+      "Action": "dynamodb:PutItem",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### ✅ STEP 6: Create Lambda Function
+- Go to Lambda → Create function
+- Choose:
+```
+Author from scratch
+Name: fraud-checker
+Runtime: Python 3.x
+Execution role: Use existing role → select your role
+```
+- Create function
+
+### ✅ STEP 7: Add Kinesis Trigger
+- Open your Lambda → Add trigger
+- Select:
+```
+Source: Kinesis
+Stream: txn-stream
+Starting position: Latest
+Batch size: 10
+```
+- Click Add
+
+### ✅ STEP 8: Add Lambda Code
+- Replace code with:
+```py
+import json
+import base64
+import boto3
+import uuid
+
+sns = boto3.client('sns')
+dynamodb = boto3.resource('dynamodb')
+
+TABLE_NAME = "transactions"
+TOPIC_ARN = "PASTE_YOUR_SNS_ARN"
+
+table = dynamodb.Table(TABLE_NAME)
+
+def lambda_handler(event, context):
+    for record in event['Records']:
+        try:
+            payload = base64.b64decode(record['kinesis']['data'])
+            data = json.loads(payload)
+
+            transaction_id = data.get('id', str(uuid.uuid4()))
+            amount = data['amount']
+
+            fraud = amount > 1000000
+
+            # Store in DB
+            table.put_item(Item={
+                'transactionId': transaction_id,
+                'amount': amount,
+                'fraud': fraud
+            })
+
+            print("Stored:", transaction_id)
+
+            # Send alert
+            if fraud:
+                sns.publish(
+                    TopicArn=TOPIC_ARN,
+                    Message=f"Fraud Alert: {data}"
+                )
+
+        except Exception as e:
+            print("Error:", str(e))
+            raise e
+```
+👉 Click Deploy
+
+### ✅ STEP 9: Configure DLQ
+- Lambda → Configuration
+- Asynchronous invocation
+- Destination → SQS → fraud-dlq
+
+### 🧪 STEP 7: RUN / TEST (Very Important)
+- Option A: AWS Console (quick test)
+- Go to Kinesis → txn-stream
+- Click Put record
+- Enter:
+```
+Partition key: key1
+Data:
+{"id":"txn101","amount":1500000}
+```
+- Click Put record
+
+### 🔄 What happens now
+```
+Data enters Kinesis
+Lambda triggers automatically
+Data stored in DynamoDB
+SNS sends alert email
+Logs go to CloudWatch
+```
+### ✅ STEP 10: VERIFY
+1. Check Lambda logs
+
+Go to:
+```
+Amazon CloudWatch → Logs → /aws/lambda/fraud-checker
+```
+You should see:
+```
+Received: {...}
+Fraud detected!
+```
+
+2. Check Email
+- You should receive Fraud Alert email
+
+3. Check Metrics
+- Lambda → Monitor tab
+- Invocations should increase
+
+4. DynamoDB: Record stored
+
+5. ✔ DLQ (failure test)
+- Send invalid data:
+```
+{
+  "amount": "bad-data"
+}
+```
+- Check SQS → message appears
+
+### 🔐 SECURITY (Production Level)
+```
+Enable encryption everywhere
+Use IAM least privilege
+No hardcoded secrets
+```
+### 💰 COST OPTIMIZATION
+```
+Lambda → pay per use
+DynamoDB → on-demand
+Kinesis → on-demand
+```
+### 🧠 SRE VALIDATION CHECKLIST
+```
+✔ Auto-trigger working
+✔ Alerts working
+✔ Data stored
+✔ Failures handled
+✔ Logs visible
+```
+
+### ⚠️ Troubleshooting (very common)
+- No Lambda trigger: Check Event source mapping enabled
+- No email: Confirm SNS subscription
+- Permission error: Check IAM role (sns:Publish + kinesis read)
+- No logs: Check CloudWatch permissions
+
+***Note: You DO NOT run Lambda manually***
+```
+It runs automatically when:
+Data enters Kinesis
+```
