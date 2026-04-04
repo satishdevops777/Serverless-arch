@@ -388,39 +388,45 @@ import uuid
 # AWS clients
 sns = boto3.client('sns')
 dynamodb = boto3.resource('dynamodb')
-sqs = boto3.client('sqs')  # optional DLQ
+sqs = boto3.client('sqs')
 
 # Config
 TABLE_NAME = "transactions"
 TOPIC_ARN = "arn:aws:sns:us-east-1:713605904859:fraud-alerts"
-DLQ_URL = "https://sqs.us-east-1.amazonaws.com/713605904859/fraud-dlq"  # optional
+DLQ_URL = "https://sqs.us-east-1.amazonaws.com/713605904859/fraud-dlq"
 
 table = dynamodb.Table(TABLE_NAME)
 
 
 def lambda_handler(event, context):
     for record in event['Records']:
+        data = None  # ✅ prevent undefined error
+
         try:
             # Decode Kinesis data
             payload = base64.b64decode(record['kinesis']['data'])
             data = json.loads(payload)
 
-            print("Received:", data)
+            print("Received:", json.dumps(data))
+
+            # ✅ Validate required fields
+            if 'amount' not in data:
+                print("Missing amount → DLQ:", data)
+                send_to_dlq(data)
+                continue
 
             # Transaction ID
             transaction_id = data.get('id', str(uuid.uuid4()))
 
             # ✅ Safe amount parsing
             try:
-                amount = int(data.get('amount', 0))
+                amount = int(data['amount'])
             except Exception:
-                print("Invalid amount, sending to DLQ:", data)
-
-                # Optional: send to DLQ manually
+                print("Invalid amount → DLQ:", data)
                 send_to_dlq(data)
                 continue
 
-            # Fraud detection logic
+            # Fraud detection
             fraud = amount > 1000000
 
             # Store in DynamoDB
@@ -430,23 +436,26 @@ def lambda_handler(event, context):
                 'fraud': fraud
             })
 
-            print("Stored:", transaction_id)
+            print(f"Stored transaction: {transaction_id}, amount: {amount}, fraud: {fraud}")
 
             # Send alert if fraud
             if fraud:
                 sns.publish(
                     TopicArn=TOPIC_ARN,
-                    Message=f"Fraud Alert: {json.dumps(data)}"
+                    Message=json.dumps({
+                        "alert": "Fraud detected",
+                        "transaction": data
+                    })
                 )
                 print("Fraud alert sent!")
 
         except Exception as e:
-            print("Error processing record:", str(e))
+            print("Critical error:", str(e), "Data:", data)
 
-            # Send failed record to DLQ
-            send_to_dlq(data)
+            # ✅ Send only if data exists
+            if data:
+                send_to_dlq(data)
 
-            # ❗ Do NOT raise exception (prevents infinite retry)
             continue
 
 
@@ -456,10 +465,12 @@ def send_to_dlq(data):
             QueueUrl=DLQ_URL,
             MessageBody=json.dumps(data)
         )
-        print("Sent to DLQ:", data)
+        print("Sent to DLQ:", json.dumps(data))
     except Exception as e:
-        print("Failed to send to DLQ:", str(e))
+        print("DLQ send failed:", str(e))
 ```
+
+
 👉 Click Deploy
 
 ### ✅ STEP 9: Configure DLQ
